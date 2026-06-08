@@ -51,6 +51,15 @@ def rolling_train(
     else:
         start_idx = train_window
 
+    # 确保 start_idx 足够大，至少有 train_window 行可用
+    min_start = train_window
+    if start_idx < min_start:
+        logger.warning(
+            f"backtest_start 对应索引 {start_idx}，小于最小训练窗口 {min_start}，"
+            f"自动调整到索引 {min_start}（日期 {dates[min_start].date()}）"
+        )
+        start_idx = min_start
+
     results: list[TrainResult] = []
     predict_indices = range(start_idx, len(dates), step)
 
@@ -71,7 +80,7 @@ def rolling_train(
         X_val   = df.iloc[val_start:train_end][feature_cols]
         y_val   = df.iloc[val_start:train_end]["label"]
 
-        if len(X_train) < 50 or y_train.nunique() < 2:
+        if len(X_train) < 50 or len(X_val) == 0 or y_train.nunique() < 2:
             continue
 
         model = model_cls(model_params)

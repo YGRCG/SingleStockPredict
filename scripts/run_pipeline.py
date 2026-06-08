@@ -35,9 +35,16 @@ def main():
     model_cfg = load_model_config()
     symbol    = cfg["stock"]["symbol"]
 
-    # 1. 下载数据
-    logger.info("=== 步骤 1：数据下载 ===")
-    download_all(symbol, cfg["data"]["start_date"], cfg["data"]["end_date"])
+    # 1. 下载数据（跳过已存在且完整的数据）
+    if cfg["data"].get("skip_download", False):
+        logger.info("=== 步骤 1：数据下载（已跳过） ===")
+    else:
+        logger.info("=== 步骤 1：数据下载 ===")
+        download_all(
+            symbol, cfg["data"]["start_date"], cfg["data"]["end_date"],
+            skip_existing=True,  # 已下载过的不再重复下载
+            include_minutes=cfg.get("include_minutes", True),
+        )
 
     # 2. 特征工程
     logger.info("=== 步骤 2：特征构建 ===")

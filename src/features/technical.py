@@ -77,7 +77,9 @@ def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
 def add_volume_ma(df: pd.DataFrame, windows: list[int]) -> pd.DataFrame:
     for w in windows:
         df[f"vol_ma_{w}"] = df["volume"].rolling(w).mean()
-    df["vol_ratio"] = df["volume"] / df["vol_ma_5"].replace(0, np.nan)
+    # 取最小的窗口作为 vol_ratio 的分母，避免硬编码
+    min_window = min(windows)
+    df["vol_ratio"] = df["volume"] / df[f"vol_ma_{min_window}"].replace(0, np.nan)
     return df
 
 

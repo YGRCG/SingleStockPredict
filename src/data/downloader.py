@@ -36,6 +36,46 @@ def _to_numeric(df: pd.DataFrame, exclude: list[str] | None = None) -> pd.DataFr
     return df
 
 
+def _bs_query_with_retry(
+    bs_code: str,
+    fields: str,
+    start_date: str,
+    end_date: str,
+    frequency: str,
+    adjust: str = "3",
+    max_retries: int = 3,
+) -> tuple[list[list], list[str]]:
+    """带重试的 baostock 查询，解决连接不稳定问题。返回 (rows, fields)。"""
+    import time as _time
+    for attempt in range(max_retries):
+        lg = bs.login()
+        if lg.error_code != "0":
+            raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+
+        rs = bs.query_history_k_data_plus(
+            bs_code,
+            fields,
+            start_date=start_date,
+            end_date=end_date,
+            frequency=frequency,
+            adjustflag=adjust,
+        )
+
+        rows = []
+        while rs.error_code == "0" and rs.next():
+            rows.append(rs.get_row_data())
+
+        col_names = rs.fields
+        bs.logout()
+
+        if rows:
+            return rows, col_names
+        logger.warning(f"  第 {attempt+1} 次查询无数据 ({bs_code} {frequency} {start_date}~{end_date})，重试...")
+        _time.sleep(2)
+
+    return [], []
+
+
 def download_daily(
     symbol: str,
     start_date: str,
@@ -48,28 +88,12 @@ def download_daily(
     save_path = Path(save_dir) / f"{symbol}_daily.parquet"
 
     logger.info(f"下载日线 {symbol}  {start_date} ~ {end_date}")
-    lg = bs.login()
-    if lg.error_code != "0":
-        raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
-
-    rs = bs.query_history_k_data_plus(
-        bs_code,
-        DAILY_FIELDS,
-        start_date=start_date,
-        end_date=end_date,
-        frequency="d",
-        adjustflag=adjust,
-    )
-    bs.logout()
-
-    rows = []
-    while rs.error_code == "0" and rs.next():
-        rows.append(rs.get_row_data())
+    rows, col_names = _bs_query_with_retry(bs_code, DAILY_FIELDS, start_date, end_date, "d", adjust)
 
     if not rows:
         raise ValueError(f"未获取到数据: {symbol}")
 
-    df = pd.DataFrame(rows, columns=rs.fields)
+    df = pd.DataFrame(rows, columns=col_names)
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
     df = _to_numeric(df)
@@ -92,22 +116,12 @@ def download_weekly(
     save_path = Path(save_dir) / f"{symbol}_weekly.parquet"
 
     logger.info(f"下载周线 {symbol}  {start_date} ~ {end_date}")
-    bs.login()
-    rs = bs.query_history_k_data_plus(
-        bs_code,
-        WEEKLY_FIELDS,
-        start_date=start_date,
-        end_date=end_date,
-        frequency="w",
-        adjustflag=adjust,
-    )
-    bs.logout()
+    rows, col_names = _bs_query_with_retry(bs_code, WEEKLY_FIELDS, start_date, end_date, "w", adjust)
 
-    rows = []
-    while rs.error_code == "0" and rs.next():
-        rows.append(rs.get_row_data())
+    if not rows:
+        raise ValueError(f"未获取到周线数据: {symbol}")
 
-    df = pd.DataFrame(rows, columns=rs.fields)
+    df = pd.DataFrame(rows, columns=col_names)
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
     df = _to_numeric(df)
@@ -130,22 +144,12 @@ def download_monthly(
     save_path = Path(save_dir) / f"{symbol}_monthly.parquet"
 
     logger.info(f"下载月线 {symbol}  {start_date} ~ {end_date}")
-    bs.login()
-    rs = bs.query_history_k_data_plus(
-        bs_code,
-        MONTHLY_FIELDS,
-        start_date=start_date,
-        end_date=end_date,
-        frequency="m",
-        adjustflag=adjust,
-    )
-    bs.logout()
+    rows, col_names = _bs_query_with_retry(bs_code, MONTHLY_FIELDS, start_date, end_date, "m", adjust)
 
-    rows = []
-    while rs.error_code == "0" and rs.next():
-        rows.append(rs.get_row_data())
+    if not rows:
+        raise ValueError(f"未获取到月线数据: {symbol}")
 
-    df = pd.DataFrame(rows, columns=rs.fields)
+    df = pd.DataFrame(rows, columns=col_names)
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
     df = _to_numeric(df)
@@ -202,38 +206,48 @@ def download_minute(
 
     all_dfs = []
     for i, (s, e) in enumerate(date_ranges):
-        lg = bs.login()
-        if lg.error_code != "0":
-            raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
-
-        rs = bs.query_history_k_data_plus(
-            bs_code,
-            MINUTE_FIELDS,
-            start_date=s,
-            end_date=e,
-            frequency=bs_freq,
-            adjustflag=adjust,
-        )
-
+        # 每段最多重试 3 次（baostock 连接不稳定时可能返回空数据）
         rows = []
-        while rs.error_code == "0" and rs.next():
-            rows.append(rs.get_row_data())
+        for attempt in range(3):
+            lg = bs.login()
+            if lg.error_code != "0":
+                raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
 
-        bs.logout()
+            rs = bs.query_history_k_data_plus(
+                bs_code,
+                MINUTE_FIELDS,
+                start_date=s,
+                end_date=e,
+                frequency=bs_freq,
+                adjustflag=adjust,
+            )
+
+            rows = []
+            while rs.error_code == "0" and rs.next():
+                rows.append(rs.get_row_data())
+
+            bs.logout()
+
+            if rows:
+                break
+            import time as _time
+            logger.warning(f"  段 {i+1}/{len(date_ranges)}: {s} ~ {e}，第 {attempt+1} 次尝试无数据，重试...")
+            _time.sleep(2)
 
         if rows:
             chunk_df = pd.DataFrame(rows, columns=rs.fields)
             all_dfs.append(chunk_df)
             logger.info(f"  段 {i+1}/{len(date_ranges)}: {s} ~ {e}，获取 {len(rows)} 条")
         else:
-            logger.info(f"  段 {i+1}/{len(date_ranges)}: {s} ~ {e}，无数据")
+            logger.warning(f"  段 {i+1}/{len(date_ranges)}: {s} ~ {e}，3 次尝试均无数据，跳过")
 
     if not all_dfs:
         raise ValueError(f"未获取到分钟数据: {symbol} {freq}")
 
     df = pd.concat(all_dfs, ignore_index=True)
-    # baostock 分钟线 time 格式：093000000 → 合并 datetime
-    df["datetime"] = pd.to_datetime(df["date"] + " " + df["time"].str[:6], format="%Y-%m-%d %H%M%S")
+    # baostock 分钟线 time 格式：YYYYMMDDHHMMSS000（17位），如 20250603093500000
+    # 直接用 time 字段解析为完整 datetime
+    df["datetime"] = pd.to_datetime(df["time"].str[:14], format="%Y%m%d%H%M%S")
     df = df.drop(columns=["date", "time"]).set_index("datetime").sort_index()
     # 去重（分段边界可能重叠）
     df = df[~df.index.duplicated(keep="first")]
@@ -263,22 +277,83 @@ def _split_date_range(
     return ranges
 
 
+def _check_data_integrity(
+    symbol: str, period: str, start_date: str, end_date: str, save_dir: str
+) -> bool:
+    """检查本地数据是否完整（覆盖起始日期、行数合理、数据较新）。"""
+    path = Path(save_dir) / f"{symbol}_{period}.parquet"
+    if not path.exists():
+        return False
+    try:
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        if len(df) == 0:
+            return False
+        # 起始日期必须覆盖
+        if df.index.min() > pd.Timestamp(start_date) + pd.Timedelta(days=5):
+            return False
+        # 结束日期：取 end_date 和今天中较早的那个，数据不应差太多
+        effective_end = min(pd.Timestamp(end_date), pd.Timestamp.now())
+        if period in ("min5", "min15", "min30", "min60"):
+            # 分钟线允许差 3 天（baostock 分钟数据更新有延迟）
+            max_gap = pd.Timedelta(days=3)
+        else:
+            # 日线/周线/月线允许差 2 天
+            max_gap = pd.Timedelta(days=2)
+        if df.index.max() < effective_end - max_gap:
+            return False
+        # 检查行数是否合理
+        actual_days = (df.index.max() - df.index.min()).days
+        if actual_days <= 0:
+            return False
+        if period == "daily":
+            expected_rows = actual_days * 250 // 365
+        elif period == "weekly":
+            expected_rows = actual_days * 52 // 365
+        elif period == "monthly":
+            expected_rows = actual_days * 12 // 365
+        else:  # 分钟线
+            bars_per_day = {"min5": 48, "min15": 16, "min30": 8, "min60": 4}
+            expected_rows = actual_days * bars_per_day.get(period, 48) * 250 // 365
+        # 允许30%误差（停牌、节假日等）
+        if len(df) < expected_rows * 0.7:
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"数据完整性检查失败 {period}: {e}")
+        return False
+
+
 def download_all(
     symbol: str,
     start_date: str,
     end_date: str,
     save_dir: str = "data/raw",
     include_minutes: bool = True,
+    skip_existing: bool = True,  # 跳过已存在且完整的数据
 ) -> dict[str, pd.DataFrame]:
     """一次性下载日/周/月以及分钟级别数据。"""
-    result = {
-        "daily":   download_daily(symbol, start_date, end_date, save_dir=save_dir),
-        "weekly":  download_weekly(symbol, start_date, end_date, save_dir=save_dir),
-        "monthly": download_monthly(symbol, start_date, end_date, save_dir=save_dir),
-    }
+    result = {}
+    # 日线/周线/月线
+    for period, download_func in [
+        ("daily", download_daily),
+        ("weekly", download_weekly),
+        ("monthly", download_monthly),
+    ]:
+        if skip_existing and _check_data_integrity(symbol, period, start_date, end_date, save_dir):
+            logger.info(f"跳过 {period} 数据（已存在且完整）")
+            result[period] = pd.read_parquet(Path(save_dir) / f"{symbol}_{period}.parquet")
+            continue
+        result[period] = download_func(symbol, start_date, end_date, save_dir=save_dir)
+    
+    # 分钟线
     if include_minutes:
         for freq in ("min5", "min15", "min30", "min60"):
             try:
+                if skip_existing and _check_data_integrity(symbol, freq, start_date, end_date, save_dir):
+                    logger.info(f"跳过 {freq} 数据（已存在且完整）")
+                    result[freq] = pd.read_parquet(Path(save_dir) / f"{symbol}_{freq}.parquet")
+                    continue
                 result[freq] = download_minute(symbol, start_date, end_date, freq=freq, save_dir=save_dir)
             except Exception as e:
                 logger.warning(f"分钟数据下载失败 {freq}: {e}")

@@ -103,6 +103,13 @@ def build_feature_matrix(
     drop_cols = [c for c in _OHLCV_COLS if c in feat.columns and c != "close"]
     feat = feat.drop(columns=drop_cols, errors="ignore")
 
+    # 去掉所有非数值列（如 adjustflag/tradestatus/isST 的前缀版本）
+    num_cols = feat.select_dtypes(include=[np.number]).columns.tolist()
+    # 保留 close（供标签使用）
+    if "close" in feat.columns and "close" not in num_cols:
+        num_cols.append("close")
+    feat = feat[num_cols]
+
     # 去掉全 NaN 列、dropna 首尾
     feat = feat.dropna(axis=1, how="all")
     feat = feat.dropna()

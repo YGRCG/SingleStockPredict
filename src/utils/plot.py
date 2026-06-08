@@ -6,6 +6,10 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from pathlib import Path
 
+# 配置中文字体，解决乱码
+plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+
 
 def plot_nav(result_df: pd.DataFrame, title: str = "净值曲线", save_path: str | None = None) -> None:
     fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True,
