@@ -1,0 +1,76 @@
+stock:
+  symbol: "000001.SZ"   # 股票代码，A股用 xxxxxx.SZ/.SH，美股用 AAPL
+  market: "A"           # A / US
+
+data:
+  start_date: "2015-01-01"
+  end_date:   "2025-12-31"
+  source: "baostock"    # baostock
+
+periods:
+  - daily
+  - weekly
+  - monthly
+  - min5     # 5 分钟
+  - min15    # 15 分钟
+  - min30    # 30 分钟
+  - min60    # 60 分钟
+
+features:
+  ma_windows:    [5, 10, 20, 60, 120]
+  rsi_period:    14
+  macd_fast:     12
+  macd_slow:     26
+  macd_signal:   9
+  boll_window:   20
+  boll_std:      2
+  atr_period:    14
+  kdj_period:    9
+  volume_ma:     [5, 10, 20]
+  corr_threshold: 0.95    # 高相关性过滤阈值，1.0 表示不过滤
+
+  weekly_kwargs:
+    ma_windows:  [5, 10, 20, 60]
+    rsi_period:  14
+    boll_window: 20
+    volume_ma:   [5, 10, 20]
+
+  monthly_kwargs:
+    ma_windows:  [3, 6, 12, 24]
+    rsi_period:  9
+    boll_window: 12
+    volume_ma:   [3, 6, 12]
+
+  minute:
+    min5:
+      agg_bars: 8
+    min15:
+      agg_bars: 8
+    min30:
+      agg_bars: 8
+    min60:
+      agg_bars: 8
+
+label:
+  horizon:   3        # 未来 N 日（或 N 根 bar）
+  type:      "binary" # binary / ternary / return / triple_barrier
+  threshold: 0.02     # ternary / triple_barrier 模式下涨跌阈值（2%）
+  # triple_barrier 专属
+  upper_pct: 0.03     # 止盈线
+  lower_pct: 0.02     # 止损线
+  min_ret_tb: 0.005   # 触及垂直边界时的最小收益判断
+
+training:
+  mode:         "rolling"  # rolling（固定窗口）/ expanding（扩展窗口）
+  train_window: 500        # 固定窗口交易日数
+  val_ratio:    0.1        # 验证集比例
+  step:         1          # 滚动步长（交易日）
+
+backtest:
+  start_date: "2020-01-01"
+  commission: 0.0003       # 单边佣金
+  slippage:   0.001        # 滑点（按成交额）
+  position:   1.0          # 全仓 / 可改为分批建仓
+
+output:
+  dir: "output"
