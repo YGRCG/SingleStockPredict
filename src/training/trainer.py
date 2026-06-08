@@ -41,10 +41,13 @@ def rolling_train(
     Returns:
         results: list of TrainResult，按日期排序
     """
-    from sklearn.metrics import roc_auc_score
+    from sklearn.metrics import roc_auc_score, r2_score
 
     df = df.dropna(subset=["label"]).copy()
     dates = df.index
+
+    # 判断是回归还是分类
+    is_regression = df["label"].dtype == float and df["label"].nunique() > 20
 
     if backtest_start:
         start_idx = dates.searchsorted(pd.Timestamp(backtest_start))
@@ -80,7 +83,9 @@ def rolling_train(
         X_val   = df.iloc[val_start:train_end][feature_cols]
         y_val   = df.iloc[val_start:train_end]["label"]
 
-        if len(X_train) < 50 or len(X_val) == 0 or y_train.nunique() < 2:
+        if len(X_train) < 50 or len(X_val) == 0:
+            continue
+        if not is_regression and y_train.nunique() < 2:
             continue
 
         model = model_cls(model_params)
@@ -88,11 +93,15 @@ def rolling_train(
 
         val_proba = model.predict_proba(X_val)
         try:
-            score = roc_auc_score(y_val, val_proba)
+            if is_regression:
+                score = r2_score(y_val, val_proba)
+            else:
+                score = roc_auc_score(y_val, val_proba)
         except Exception:
             score = float("nan")
 
         pred_date = dates[pred_idx]
+        score_label = "val_r2" if is_regression else "val_auc"
         results.append(TrainResult(
             date=pred_date,
             model=model,
@@ -101,7 +110,7 @@ def rolling_train(
         ))
 
         if (i + 1) % 20 == 0:
-            logger.info(f"  [{i+1}/{len(predict_indices)}] {pred_date.date()} | val_auc={score:.4f}")
+            logger.info(f"  [{i+1}/{len(predict_indices)}] {pred_date.date()} | {score_label}={score:.4f}")
 
         if save_dir:
             path = Path(save_dir) / f"{model.name}_{pred_date.strftime('%Y%m%d')}.pkl"

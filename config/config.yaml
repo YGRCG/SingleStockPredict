@@ -54,7 +54,7 @@ features:
 
 label:
   horizon:   3        # 未来 N 日（或 N 根 bar）
-  type:      "binary" # binary / ternary / return / triple_barrier
+  type:      "ternary" # binary / ternary / return / triple_barrier
   threshold: 0.02     # ternary / triple_barrier 模式下涨跌阈值（2%）
   # triple_barrier 专属
   upper_pct: 0.03     # 止盈线

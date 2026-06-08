@@ -59,8 +59,13 @@ def run_backtest(
 
         result = model_map[date]
         row    = df.loc[date, feature_cols]
-        proba  = result.model.predict_proba(pd.DataFrame([row]))[0]
-        signal = int(proba >= cfg.threshold)  # 1=买 0=不持有
+        pred   = result.model.predict_proba(pd.DataFrame([row]))[0]
+
+        # 分类：proba >= threshold → 买入；回归：预测值 > 0 → 买入
+        if result.model._is_regression:
+            signal = int(pred > 0)
+        else:
+            signal = int(pred >= cfg.threshold)
 
         # 取次日开盘执行（简化：用次日收盘价代替）
         future_dates = df.index[df.index > date]
@@ -92,7 +97,7 @@ def run_backtest(
         records.append({
             "date":        exec_date,
             "signal":      signal,
-            "proba":       round(proba, 4),
+            "pred":        round(pred, 6),
             "price":       exec_price,
             "position":    position,
             "cash":        round(cash, 2),
