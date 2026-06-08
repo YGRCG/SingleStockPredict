@@ -175,9 +175,21 @@ def download_minute(
     """
     下载分钟级 K 线。baostock 分钟数据单次最多返回约 500 条，
     需按 chunk_months 个月分段下载再拼接。
+    注意：baostock 分钟数据仅保留 2020-01-03 至今的数据。
     """
     if freq not in _MINUTE_FREQ_MAP:
         raise ValueError(f"freq 必须为 {list(_MINUTE_FREQ_MAP.keys())}，当前: {freq}")
+    
+    # 日期范围校验：baostock 分钟数据仅从2020年开始
+    earliest_available = pd.Timestamp("2020-01-03")
+    s = pd.Timestamp(start_date)
+    e = pd.Timestamp(end_date)
+    if s < earliest_available:
+        logger.info(f"baostock 分钟数据仅从2020-01-03开始，自动调整起始日期")
+        s = earliest_available
+        start_date = s.strftime("%Y-%m-%d")
+    if s >= e:
+        raise ValueError(f"有效日期范围为空（已调整为 {start_date} ~ {end_date}")
 
     bs_code  = _bs_code(symbol)
     bs_freq  = _MINUTE_FREQ_MAP[freq]
