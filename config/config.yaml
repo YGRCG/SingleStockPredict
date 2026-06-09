@@ -1,5 +1,5 @@
 stock:
-  symbol: "300226.SZ"   # 股票代码，A股用 xxxxxx.SZ/.SH，美股用 AAPL
+  symbol: "000001.SZ"   # 股票代码，A股用 xxxxxx.SZ/.SH，美股用 AAPL
   market: "A"           # A / US
 
 data:
@@ -11,9 +11,9 @@ data:
 periods:
   - daily
   - weekly
-  - monthly
-  - min5     # 5 分钟
-  - min15    # 15 分钟
+  #- monthly
+  #- min5     # 5 分钟
+  # - min15    # 15 分钟
   - min30    # 30 分钟
   - min60    # 60 分钟
 
@@ -29,6 +29,10 @@ features:
   kdj_period:    9
   volume_ma:     [5, 10, 20]
   corr_threshold: 0.95    # 高相关性过滤阈值，1.0 表示不过滤
+
+  zscore:
+    enabled: false         # true 则启用滚动 z-score 标准化
+    window: 120            # 滚动窗口（交易日）
 
   weekly_kwargs:
     ma_windows:  [5, 10, 20, 60]
@@ -54,7 +58,7 @@ features:
 
 label:
   horizon:   3        # 未来 N 日（或 N 根 bar）
-  type:      "triple_barrier"         # binary / ternary / return / triple_barrier / tb_win
+  type:      "tb_win"         # binary / ternary / return / triple_barrier / tb_win
   threshold: 0.02     # ternary / triple_barrier 模式下涨跌阈值（2%）
   # triple_barrier 专属
   upper_pct: 0.03     # 止盈线
@@ -62,7 +66,7 @@ label:
   min_ret_tb: 0.005   # 触及垂直边界时的最小收益判断
 
 model:
-  name: "xgb"             # lgbm / xgb
+  name: "lgbm"             # lgbm / xgb
 
 training:
   mode:         "rolling"  # rolling（固定窗口）/ expanding（扩展窗口）

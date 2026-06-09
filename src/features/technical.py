@@ -92,12 +92,12 @@ def add_obv(df: pd.DataFrame) -> pd.DataFrame:
 # ── 价格衍生特征 ────────────────────────────────────────────────────────────────
 
 def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
-    df["ret_1d"]  = df["close"].pct_change(1)
-    df["ret_5d"]  = df["close"].pct_change(5)
-    df["ret_10d"] = df["close"].pct_change(10)
-    df["ret_20d"] = df["close"].pct_change(20)
-    df["high_low_ratio"] = df["high"] / df["low"].replace(0, np.nan) - 1
-    df["close_open_ratio"] = df["close"] / df["open"].replace(0, np.nan) - 1
+    df["ret_1d"]  = np.log(df["close"] / df["close"].shift(1))
+    df["ret_5d"]  = np.log(df["close"] / df["close"].shift(5))
+    df["ret_10d"] = np.log(df["close"] / df["close"].shift(10))
+    df["ret_20d"] = np.log(df["close"] / df["close"].shift(20))
+    df["high_low_ratio"] = np.log(df["high"] / df["low"].replace(0, np.nan))
+    df["close_open_ratio"] = np.log(df["close"] / df["open"].replace(0, np.nan))
     return df
 
 

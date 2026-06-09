@@ -58,9 +58,10 @@ def _relativize_features(df: pd.DataFrame) -> pd.DataFrame:
             to_drop.append(col)
             continue
 
-        # OBV：取变化率代替累积绝对值
+        # OBV：取滚动均值的变化率，避免累积值过零导致 pct_change 爆炸
         if col in ("obv", "w_obv", "m_obv"):
-            df[col] = df[col].pct_change()
+            obv_ma = df[col].rolling(20, min_periods=1).mean()
+            df[col] = (df[col] - obv_ma) / obv_ma.replace(0, np.nan)
             continue
 
         # 分钟线绝对价格：high/low 转为相对 close
@@ -76,6 +77,19 @@ def _relativize_features(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
     return df.drop(columns=to_drop, errors="ignore")
+
+
+def _rolling_zscore(df: pd.DataFrame, window: int = 120) -> pd.DataFrame:
+    """滚动 z-score 标准化，使特征更平稳。
+    每个特征用过去 window 日的均值/标准差做标准化，不引入未来信息。"""
+    exclude = {"close", "label", "future_ret"}
+    cols = [c for c in df.columns if c not in exclude]
+    result = df.copy()
+    for col in cols:
+        rolling_mean = df[col].rolling(window, min_periods=20).mean()
+        rolling_std  = df[col].rolling(window, min_periods=20).std()
+        result[col]  = (df[col] - rolling_mean) / rolling_std.replace(0, np.nan)
+    return result
 
 
 def _drop_highly_correlated(df: pd.DataFrame, threshold: float = 0.95) -> pd.DataFrame:
@@ -168,14 +182,64 @@ def build_feature_matrix(
         num_cols.append("close")
     feat = feat[num_cols]
 
-    # 去掉全 NaN 列、dropna 首尾
+    # 去掉全 NaN 列
     feat = feat.dropna(axis=1, how="all")
-    feat = feat.dropna()
+
+    # 分析 NaN 分布
+    nan_ratio = feat.isna().mean()
+    high_nan_cols = nan_ratio[nan_ratio > 0.3].sort_values(ascending=False)
+    if len(high_nan_cols) > 0:
+        logger.info(
+            f"NaN 比例 >30% 的列（共 {len(high_nan_cols)} 列）: "
+            f"{dict(list(high_nan_cols.items())[:10])}"
+        )
+
+    # 中性值填充：指标预热期不足时，用中性值代替 NaN
+    # 语义："数据不足时假设指标处于中性/均衡状态"
+    _FILL_RULES = [
+        ("ma_", 0.0), ("ema_", 0.0),
+        ("w_ma_", 0.0), ("w_ema_", 0.0),
+        ("m_ma_", 0.0), ("m_ema_", 0.0),
+        ("macd_", 0.0), ("w_macd_", 0.0), ("m_macd_", 0.0),
+        ("atr_", 0.0), ("w_atr_", 0.0), ("m_atr_", 0.0),
+        ("rsi_", 50.0), ("w_rsi_", 50.0), ("m_rsi_", 50.0),
+        ("kdj_k", 50.0), ("kdj_d", 50.0), ("kdj_j", 50.0),
+        ("w_kdj_", 50.0), ("m_kdj_", 50.0),
+        ("boll_width", 0.0), ("boll_pos", 0.5),
+        ("w_boll_", 0.0), ("m_boll_", 0.0),
+        ("vol_ratio", 1.0), ("w_vol_ratio", 1.0), ("m_vol_ratio", 1.0),
+        ("obv", 0.0), ("w_obv", 0.0), ("m_obv", 0.0),
+        ("ret_", 0.0), ("w_ret_", 0.0), ("m_ret_", 0.0),
+        ("cross_", 0.0),
+        ("turn", 0.0), ("pctChg", 0.0),
+        ("min", 0.0),
+    ]
+    for col in feat.columns:
+        if feat[col].isna().any():
+            for prefix, fill_val in _FILL_RULES:
+                if col.startswith(prefix) or col.endswith(prefix):
+                    feat[col] = feat[col].fillna(fill_val)
+                    break
+
+    # 剩余无法匹配规则的 NaN 列，用 0 填充
+    remaining_nan = feat.isna().sum()
+    remaining_nan_cols = remaining_nan[remaining_nan > 0]
+    if len(remaining_nan_cols) > 0:
+        logger.info(f"未匹配填充规则的 NaN 列，用 0 填充: {dict(remaining_nan_cols)}")
+        feat = feat.fillna(0.0)
 
     # 高相关性过滤：移除相关系数 > threshold 的冗余列
     corr_thresh = fcfg.get("corr_threshold", 0.95)
     if corr_thresh < 1.0:
         feat = _drop_highly_correlated(feat, corr_thresh)
+
+    # 滚动 z-score 标准化（可选，默认关闭）
+    zscore_cfg = fcfg.get("zscore", {})
+    if zscore_cfg.get("enabled", False):
+        zscore_window = zscore_cfg.get("window", 120)
+        feat = _rolling_zscore(feat, zscore_window)
+        feat = feat.dropna()
+        logger.info(f"滚动 z-score 标准化完成 | window={zscore_window}")
 
     logger.info(f"特征矩阵: {feat.shape[0]} 行 × {feat.shape[1]} 列")
 
