@@ -98,6 +98,32 @@ def _triple_barrier(
     return pd.Series(labels, index=close.index)
 
 
+# ── TB Win（止盈胜率） ────────────────────────────────────────────────────────
+
+def _tb_win(
+    close: pd.Series,
+    horizon: int,
+    upper_pct: float,
+) -> pd.Series:
+    """未来 horizon 日内触及止盈线 → 1，否则 → 0。"""
+    prices = close.values
+    n      = len(prices)
+    labels = np.full(n, np.nan)
+
+    for t in range(n - 1):
+        if t + horizon >= n:
+            break
+        p0    = prices[t]
+        upper = p0 * (1 + upper_pct)
+        labels[t] = 0.0
+        for i in range(t + 1, min(t + horizon, n - 1) + 1):
+            if prices[i] >= upper:
+                labels[t] = 1.0
+                break
+
+    return pd.Series(labels, index=close.index)
+
+
 # ── 公共入口 ──────────────────────────────────────────────────────────────────
 
 def build_labels(
@@ -136,9 +162,12 @@ def build_labels(
     elif label_type == "triple_barrier":
         label = _triple_barrier(close, horizon, upper_pct, lower_pct)
 
+    elif label_type == "tb_win":
+        label = _tb_win(close, horizon, upper_pct)
+
     else:
         raise ValueError(f"未知 label_type: {label_type}，"
-                         f"可选: binary / ternary / return / triple_barrier")
+                         f"可选: binary / ternary / return / triple_barrier / tb_win")
 
     result = df.copy()
     result["label"]      = label

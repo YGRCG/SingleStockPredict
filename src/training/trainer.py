@@ -34,6 +34,7 @@ def rolling_train(
     step: int = 1,
     backtest_start: str | None = None,
     save_dir: str | None = None,
+    label_type: str = "binary",
 ) -> list[TrainResult]:
     """
     Walk-forward 训练，返回每个预测时间点对应的模型列表。
@@ -46,8 +47,7 @@ def rolling_train(
     df = df.dropna(subset=["label"]).copy()
     dates = df.index
 
-    # 判断是回归还是分类
-    is_regression = df["label"].dtype == float and df["label"].nunique() > 20
+    is_regression = label_type in ("return", "triple_barrier")
 
     if backtest_start:
         start_idx = dates.searchsorted(pd.Timestamp(backtest_start))
@@ -88,7 +88,7 @@ def rolling_train(
         if not is_regression and y_train.nunique() < 2:
             continue
 
-        model = model_cls(model_params)
+        model = model_cls(model_params, label_type=label_type)
         model.fit(X_train, y_train, X_val, y_val)
 
         val_proba = model.predict_proba(X_val)

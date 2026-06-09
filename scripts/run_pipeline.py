@@ -61,6 +61,8 @@ def main():
         horizon    = lcfg["horizon"],
         label_type = lcfg["type"],
         threshold  = lcfg["threshold"],
+        upper_pct  = lcfg.get("upper_pct", 0.03),
+        lower_pct  = lcfg.get("lower_pct", 0.02),
     )
     full_df = drop_label_na(full_df)
     feature_cols = get_feature_cols(full_df)
@@ -79,6 +81,7 @@ def main():
         step          = tcfg["step"],
         backtest_start = cfg["backtest"]["start_date"],
         save_dir      = "output/models",
+        label_type    = lcfg["type"],
     )
 
     if not train_results:
@@ -96,8 +99,13 @@ def main():
     bt_cfg = BacktestConfig(
         commission = cfg["backtest"]["commission"],
         slippage   = cfg["backtest"]["slippage"],
+        threshold  = cfg["backtest"].get("threshold", 0.5),
     )
     result_df = run_backtest(full_df, feature_cols, train_results, bt_cfg)
+    
+    # 创建输出目录
+    import os
+    os.makedirs("output/predictions", exist_ok=True)
     result_df.to_csv(f"output/predictions/{symbol}_backtest.csv")
 
     metrics = calc_metrics(result_df)

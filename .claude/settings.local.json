@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir *)",
+      "Bash(Get-ChildItem \"I:\\\\stock\\\\SingleStockPredict\" -Recurse)",
+      "Bash(Select-Object FullName)"
+    ]
+  }
+}

@@ -56,6 +56,7 @@ def main():
     bt_cfg = BacktestConfig(
         commission = cfg["backtest"]["commission"],
         slippage   = cfg["backtest"]["slippage"],
+        threshold  = cfg["backtest"].get("threshold", 0.5),
     )
     result_df = run_backtest(full_df, feature_cols, train_results, bt_cfg)
     result_df.to_csv(f"output/predictions/{symbol}_{args.model}_backtest.csv")

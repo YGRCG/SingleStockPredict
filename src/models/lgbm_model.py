@@ -7,8 +7,9 @@ from src.models.base import BaseModel
 class LGBMModel(BaseModel):
     name = "lgbm"
 
-    def __init__(self, params: dict):
+    def __init__(self, params: dict, label_type: str = "binary"):
         self.params = params
+        self.label_type = label_type
         self.model = None
         self._is_multiclass = False
         self._is_regression = False
@@ -26,16 +27,20 @@ class LGBMModel(BaseModel):
 
         params = {k: v for k, v in self.params.items() if k != "early_stopping_rounds"}
 
-        # 判断是回归还是分类
-        n_classes = y_train.nunique()
-        if n_classes > 20 or y_train.dtype == float:
-            # 连续值标签 → 回归
+        if self.label_type == "return":
             params["objective"] = "regression"
             params["metric"] = "mae"
             self._is_regression = True
             self._is_multiclass = False
             self.model = lgb.LGBMRegressor(**params)
-        elif n_classes > 2:
+        elif self.label_type == "triple_barrier":
+            params["objective"] = "regression"
+            params["metric"] = "mae"
+            self._is_regression = True
+            self._is_multiclass = False
+            self.model = lgb.LGBMRegressor(**params)
+        elif self.label_type == "ternary":
+            n_classes = y_train.nunique()
             params["objective"] = "multiclass"
             params["num_class"] = n_classes
             params.pop("metric", None)
