@@ -23,6 +23,61 @@ _OHLCV_COLS = ["open", "high", "low", "close", "volume", "amount",
                "adjustflag", "tradestatus", "isST"]
 
 
+def _relativize_features(df: pd.DataFrame) -> pd.DataFrame:
+    """将绝对价格/量级特征转为相对值，提升跨时期泛化能力。
+    须在跨周期特征计算之后、去除 OHLCV 列之前调用。"""
+    close = df["close"]
+    to_drop = []
+
+    for col in list(df.columns):
+        # MA / EMA：转为偏离度 (close / ma - 1)
+        if any(col.startswith(p) for p in
+               ("ma_", "ema_", "w_ma_", "w_ema_", "m_ma_", "m_ema_")):
+            df[col] = close / df[col].replace(0, np.nan) - 1
+            continue
+
+        # 布林带绝对值：已有 boll_width/boll_pos，直接丢弃
+        if col in ("boll_mid", "boll_upper", "boll_lower",
+                    "w_boll_mid", "w_boll_upper", "w_boll_lower",
+                    "m_boll_mid", "m_boll_upper", "m_boll_lower"):
+            to_drop.append(col)
+            continue
+
+        # MACD：除以 close 归一化
+        if any(col.startswith(p) for p in ("macd_", "w_macd_", "m_macd_")):
+            df[col] = df[col] / close
+            continue
+
+        # ATR：除以 close 转为百分比
+        if any(col.startswith(p) for p in ("atr_", "w_atr_", "m_atr_")):
+            df[col] = df[col] / close
+            continue
+
+        # vol_ma_X：已有 vol_ratio，直接丢弃
+        if any(col.startswith(p) for p in ("vol_ma_", "w_vol_ma_", "m_vol_ma_")):
+            to_drop.append(col)
+            continue
+
+        # OBV：取变化率代替累积绝对值
+        if col in ("obv", "w_obv", "m_obv"):
+            df[col] = df[col].pct_change()
+            continue
+
+        # 分钟线绝对价格：high/low 转为相对 close
+        if any(col.endswith(s) for s in ("_intraday_high", "_intraday_low")):
+            df[col] = df[col] / close - 1
+            continue
+
+        # 分钟线冗余绝对值：丢弃
+        if any(col.endswith(s) for s in
+               ("_intraday_open", "_intraday_close", "_intraday_vol")) or \
+           (col.endswith("_vwap") and not col.endswith("_vwap_premium")):
+            to_drop.append(col)
+            continue
+
+    return df.drop(columns=to_drop, errors="ignore")
+
+
 def _drop_highly_correlated(df: pd.DataFrame, threshold: float = 0.95) -> pd.DataFrame:
     """移除相关系数绝对值 > threshold 的冗余列，保留先出现的列。"""
     corr = df.corr().abs()
@@ -98,6 +153,9 @@ def build_feature_matrix(
         minute_feats=minute_feats or None,
         cross_feat=cross_feat,
     )
+
+    # 绝对特征相对化（跨周期特征已算完，绝对值无用途）
+    feat = _relativize_features(feat)
 
     # 去掉原始 OHLCV（保留 close 供标签使用，后续可按需剔除）
     drop_cols = [c for c in _OHLCV_COLS if c in feat.columns and c != "close"]
