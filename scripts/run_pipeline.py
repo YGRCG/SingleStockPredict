@@ -12,6 +12,7 @@ from src.data.downloader import download_all
 from src.features.pipeline import build_feature_matrix
 from src.labels.builder import build_labels, drop_label_na, get_feature_cols
 from src.models.lgbm_model import LGBMModel
+from src.models.xgb_model import XGBModel
 from src.training.trainer import rolling_train
 from src.backtest.engine import run_backtest, BacktestConfig
 from src.backtest.metrics import calc_metrics, print_metrics
@@ -70,11 +71,14 @@ def main():
     # 4. 滚动训练
     logger.info("=== 步骤 4：滚动训练 ===")
     tcfg = cfg["training"]
+    model_name = cfg.get("model", {}).get("name", "lgbm")
+    MODEL_MAP = {"lgbm": LGBMModel, "xgb": XGBModel}
+    model_cls = MODEL_MAP[model_name]
     train_results = rolling_train(
         full_df,
         feature_cols  = feature_cols,
-        model_cls     = LGBMModel,
-        model_params  = model_cfg["lgbm"],
+        model_cls     = model_cls,
+        model_params  = model_cfg[model_name],
         mode          = tcfg["mode"],
         train_window  = tcfg["train_window"],
         val_ratio     = tcfg["val_ratio"],

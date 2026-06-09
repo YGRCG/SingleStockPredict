@@ -61,6 +61,9 @@ label:
   lower_pct: 0.02     # 止损线
   min_ret_tb: 0.005   # 触及垂直边界时的最小收益判断
 
+model:
+  name: "xgb"             # lgbm / xgb
+
 training:
   mode:         "rolling"  # rolling（固定窗口）/ expanding（扩展窗口）
   train_window: 500        # 固定窗口交易日数
