@@ -14,6 +14,7 @@ from src.features.multi_period import (
     build_minute_features, build_cross_period_features, merge_multi_period,
 )
 from src.features.price_pattern import build_pattern_features
+from src.features.alpha.builder import build_alpha_features
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -119,27 +120,27 @@ def build_feature_matrix(
         含所有特征的宽表 DataFrame（索引 date）
     """
     fcfg = cfg["features"]
-    data = load_all_periods(symbol, data_dir)
+    data = load_all_periods(symbol, data_dir, periods=cfg.get("periods"))
 
-    # 日线技术指标 + 形态特征
-    daily_feat = build_technical_features(
-        data["daily"],
-        ma_windows  = fcfg["ma_windows"],
-        rsi_period  = fcfg["rsi_period"],
-        macd_fast   = fcfg["macd_fast"],
-        macd_slow   = fcfg["macd_slow"],
-        macd_signal = fcfg["macd_signal"],
-        boll_window = fcfg["boll_window"],
-        atr_period  = fcfg["atr_period"],
-        volume_ma   = fcfg["volume_ma"],
-    )
+    # 日线技术指标：过滤掉非指标的结构性 key，其余全部透传
+    _NON_TECH_KEYS = {"corr_threshold", "zscore", "weekly_kwargs", "monthly_kwargs", "minute"}
+    tech_kwargs = {k: v for k, v in fcfg.items() if k not in _NON_TECH_KEYS}
+    daily_feat = build_technical_features(data["daily"], **tech_kwargs)
     daily_feat = build_pattern_features(daily_feat)
 
-    # 周线 / 月线对齐（独立参数）
-    w_kwargs = fcfg.get("weekly_kwargs", {})
-    m_kwargs = fcfg.get("monthly_kwargs", {})
-    weekly_feat  = build_weekly_features(daily_feat.index, data["weekly"], **w_kwargs)
-    monthly_feat = build_monthly_features(daily_feat.index, data["monthly"], **m_kwargs)
+    # Alpha101 因子（可选）
+    alpha_cfg = fcfg.get("alphas", {})
+    if alpha_cfg.get("enabled"):
+        alpha_feat = build_alpha_features(data["daily"], alpha_cfg)
+        daily_feat = daily_feat.join(alpha_feat, how="left")
+
+    # 周线 / 月线对齐（仅在对应数据已加载时计算）
+    weekly_feat  = None
+    monthly_feat = None
+    if "weekly" in data:
+        weekly_feat  = build_weekly_features(daily_feat.index, data["weekly"],  **fcfg.get("weekly_kwargs",  {}))
+    if "monthly" in data:
+        monthly_feat = build_monthly_features(daily_feat.index, data["monthly"], **fcfg.get("monthly_kwargs", {}))
 
     # 分钟线特征
     minute_feats = {}
@@ -154,11 +155,12 @@ def build_feature_matrix(
             )
 
     # 先合并日线+周线+月线，再计算跨周期交互特征
-    merged_for_cross = daily_feat.join(
-        weekly_feat[[c for c in weekly_feat.columns if c not in _OHLCV_COLS]], how="left"
-    ).join(
-        monthly_feat[[c for c in monthly_feat.columns if c not in _OHLCV_COLS]], how="left"
-    )
+    merged_for_cross = daily_feat.copy()
+    for pf in (weekly_feat, monthly_feat):
+        if pf is not None:
+            merged_for_cross = merged_for_cross.join(
+                pf[[c for c in pf.columns if c not in _OHLCV_COLS]], how="left"
+            )
     cross_feat = build_cross_period_features(merged_for_cross)
 
     # 合并
@@ -213,6 +215,7 @@ def build_feature_matrix(
         ("cross_", 0.0),
         ("turn", 0.0), ("pctChg", 0.0),
         ("min", 0.0),
+        ("alpha", 0.0),
     ]
     for col in feat.columns:
         if feat[col].isna().any():

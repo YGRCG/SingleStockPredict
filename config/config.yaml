@@ -11,21 +11,21 @@ data:
 periods:
   - daily
   - weekly
-  #- monthly
-  #- min5     # 5 分钟
-  # - min15    # 15 分钟
+  - monthly
+  - min5     # 5 分钟
+  - min15    # 15 分钟
   - min30    # 30 分钟
   - min60    # 60 分钟
 
 features:
   ma_windows:    [5, 10, 20, 60, 120]
-  rsi_period:    14
-  macd_fast:     12
-  macd_slow:     26
-  macd_signal:   9
-  boll_window:   20
-  boll_std:      2
-  atr_period:    14
+  # rsi_period:    14
+  # macd_fast:     12
+  # macd_slow:     26
+  # macd_signal:   9
+  # boll_window:   20
+  # boll_std:      2
+  atr_periods:   [7, 14, 21]
   kdj_period:    9
   volume_ma:     [5, 10, 20]
   corr_threshold: 0.95    # 高相关性过滤阈值，1.0 表示不过滤
@@ -55,6 +55,10 @@ features:
       agg_bars: 8
     min60:
       agg_bars: 8
+
+  alphas:
+    enabled: [1, 2, 6, 12]   # 填因子编号；注释掉整个 alphas 块则不计算
+    rank_window: 252           # 单股场景下滚动 rank 的时序窗口
 
 label:
   horizon:   3        # 未来 N 日（或 N 根 bar）

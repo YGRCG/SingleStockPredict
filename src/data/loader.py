@@ -33,15 +33,26 @@ def load_kline(symbol: str, period: str, data_dir: str = "data/raw") -> pd.DataF
     return df.sort_index()
 
 
-def load_all_periods(symbol: str, data_dir: str = "data/raw") -> dict[str, pd.DataFrame]:
-    """加载所有周期数据，返回字典。分钟线文件不存在则跳过。"""
-    periods = ["daily", "weekly", "monthly", "min5", "min15", "min30", "min60"]
+def load_all_periods(
+    symbol: str,
+    data_dir: str = "data/raw",
+    periods: list[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """加载指定周期数据，返回字典。
+    periods 为 None 时加载全部；daily 始终必须存在。
+    """
+    all_periods = ["daily", "weekly", "monthly", "min5", "min15", "min30", "min60"]
+    requested = set(periods) if periods else set(all_periods)
+    requested.add("daily")  # daily 始终加载
+
     result = {}
-    for period in periods:
+    for period in all_periods:
+        if period not in requested:
+            continue
         try:
             result[period] = load_kline(symbol, period, data_dir)
         except FileNotFoundError:
-            if period in ("daily", "weekly", "monthly"):
+            if period == "daily":
                 raise
-            logger.info(f"跳过 {period} 数据（文件不存在）")
+            logger.info(f"跳过 {period} 数据（未启用或文件不存在）")
     return result

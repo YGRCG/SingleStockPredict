@@ -65,12 +65,13 @@ def add_boll(df: pd.DataFrame, window: int = 20, std_mult: float = 2.0) -> pd.Da
 
 # ── 波动 / 量 类 ────────────────────────────────────────────────────────────────
 
-def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+def add_atr(df: pd.DataFrame, periods: list[int]) -> pd.DataFrame:
     high_low   = df["high"] - df["low"]
     high_close = (df["high"] - df["close"].shift()).abs()
     low_close  = (df["low"]  - df["close"].shift()).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    df[f"atr_{period}"] = tr.rolling(period).mean()
+    for period in periods:
+        df[f"atr_{period}"] = tr.rolling(period).mean()
     return df
 
 
@@ -103,29 +104,26 @@ def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── 汇总入口 ───────────────────────────────────────────────────────────────────
 
-def build_technical_features(
-    df: pd.DataFrame,
-    ma_windows:   list[int] = None,
-    rsi_period:   int = 14,
-    macd_fast:    int = 12,
-    macd_slow:    int = 26,
-    macd_signal:  int = 9,
-    boll_window:  int = 20,
-    atr_period:   int = 14,
-    volume_ma:    list[int] = None,
-) -> pd.DataFrame:
+def build_technical_features(df: pd.DataFrame, **cfg) -> pd.DataFrame:
     df = df.copy()
-    ma_windows = ma_windows or [5, 10, 20, 60, 120]
-    volume_ma  = volume_ma  or [5, 10, 20]
+    ma_windows = cfg.get("ma_windows") or [5, 10, 20, 60, 120]
+    volume_ma  = cfg.get("volume_ma")  or [5, 10, 20]
 
     df = add_ma(df, ma_windows)
     df = add_ema(df, [12, 26])
-    df = add_macd(df, macd_fast, macd_slow, macd_signal)
-    df = add_rsi(df, rsi_period)
-    df = add_kdj(df)
-    df = add_boll(df, boll_window)
-    df = add_atr(df, atr_period)
     df = add_volume_ma(df, volume_ma)
     df = add_obv(df)
     df = add_price_features(df)
+
+    if p := cfg.get("rsi_period"):
+        df = add_rsi(df, p)
+    if p := cfg.get("macd_fast"):
+        df = add_macd(df, p, cfg.get("macd_slow", 26), cfg.get("macd_signal", 9))
+    if p := cfg.get("kdj_period"):
+        df = add_kdj(df, p)
+    if p := cfg.get("boll_window"):
+        df = add_boll(df, p, cfg.get("boll_std", 2.0))
+    if p := cfg.get("atr_periods"):
+        df = add_atr(df, p)
+
     return df

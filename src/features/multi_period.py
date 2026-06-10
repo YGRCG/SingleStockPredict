@@ -229,18 +229,21 @@ def build_cross_period_features(daily_feat: pd.DataFrame) -> pd.DataFrame:
 
 def merge_multi_period(
     daily_feat: pd.DataFrame,
-    weekly_feat: pd.DataFrame,
-    monthly_feat: pd.DataFrame,
+    weekly_feat: pd.DataFrame | None = None,
+    monthly_feat: pd.DataFrame | None = None,
     minute_feats: dict[str, pd.DataFrame] | None = None,
     cross_feat: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """横向拼接所有周期特征（含跨周期交互特征），索引对齐到日频。"""
     ohlcv = ["open", "high", "low", "close", "volume", "amount"]
-    w_cols = [c for c in weekly_feat.columns  if c not in ohlcv]
-    m_cols = [c for c in monthly_feat.columns if c not in ohlcv]
 
-    merged = daily_feat.join(weekly_feat[w_cols], how="left")
-    merged = merged.join(monthly_feat[m_cols], how="left")
+    merged = daily_feat.copy()
+    if weekly_feat is not None:
+        w_cols = [c for c in weekly_feat.columns if c not in ohlcv]
+        merged = merged.join(weekly_feat[w_cols], how="left")
+    if monthly_feat is not None:
+        m_cols = [c for c in monthly_feat.columns if c not in ohlcv]
+        merged = merged.join(monthly_feat[m_cols], how="left")
 
     if minute_feats:
         for freq, mfeat in minute_feats.items():
