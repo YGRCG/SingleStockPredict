@@ -8,12 +8,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import yaml
-from src.data.downloader import download_all
+import pandas as pd
+from src.data.downloader import download_all, download_daily
 from src.features.pipeline import build_feature_matrix
 from src.labels.builder import build_labels, drop_label_na, get_feature_cols
 from src.models.lgbm_model import LGBMModel
 from src.models.xgb_model import XGBModel
-from src.training.trainer import rolling_train
+from src.models.lstm_model import LSTMModel
+from src.training.trainer import rolling_train, rolling_train_seq
 from src.backtest.engine import run_backtest, BacktestConfig
 from src.backtest.metrics import calc_metrics, print_metrics
 from src.utils.plot import plot_nav
@@ -47,6 +49,12 @@ def main():
             include_minutes=cfg.get("include_minutes", True),
         )
 
+    # 1b. 下载指数数据（市场环境特征用）
+    market_cfg = cfg.get("market", {})
+    if market_cfg.get("enabled") and not cfg["data"].get("skip_download", False):
+        for idx_cfg in market_cfg["indices"]:
+            download_daily(idx_cfg["symbol"], cfg["data"]["start_date"], cfg["data"]["end_date"])
+
     # 2. 特征工程
     logger.info("=== 步骤 2：特征构建 ===")
     feat_df = build_feature_matrix(
@@ -72,21 +80,28 @@ def main():
     logger.info("=== 步骤 4：滚动训练 ===")
     tcfg = cfg["training"]
     model_name = cfg.get("model", {}).get("name", "lgbm")
-    MODEL_MAP = {"lgbm": LGBMModel, "xgb": XGBModel}
+    MODEL_MAP = {"lgbm": LGBMModel, "xgb": XGBModel, "lstm": LSTMModel}
     model_cls = MODEL_MAP[model_name]
-    train_results = rolling_train(
-        full_df,
-        feature_cols  = feature_cols,
-        model_cls     = model_cls,
-        model_params  = model_cfg[model_name],
-        mode          = tcfg["mode"],
-        train_window  = tcfg["train_window"],
-        val_ratio     = tcfg["val_ratio"],
-        step          = tcfg["step"],
+
+    train_kwargs = dict(
+        feature_cols   = feature_cols,
+        model_cls      = model_cls,
+        model_params   = model_cfg[model_name],
+        mode           = tcfg["mode"],
+        train_window   = tcfg["train_window"],
+        val_ratio      = tcfg["val_ratio"],
+        step           = tcfg["step"],
         backtest_start = cfg["backtest"]["start_date"],
-        save_dir      = "output/models",
-        label_type    = lcfg["type"],
+        save_dir       = "output/models",
+        label_type     = lcfg["type"],
+        purge_gap      = lcfg.get("horizon", 3),
     )
+
+    if model_name == "lstm":
+        seq_len = model_cfg["lstm"].get("seq_len", 30)
+        train_results = rolling_train_seq(full_df, **train_kwargs, seq_len=seq_len)
+    else:
+        train_results = rolling_train(full_df, **train_kwargs)
 
     if not train_results:
         raise RuntimeError(
@@ -115,6 +130,24 @@ def main():
     metrics = calc_metrics(result_df)
     print_metrics(metrics)
     plot_nav(result_df, title=f"{symbol} 回测净值", save_path=f"output/reports/{symbol}_nav.png")
+
+    # 6. 预测准确率分析 + 阈值优化
+    if cfg.get("accuracy", {}).get("enabled", False):
+        logger.info("=== 步骤 6：预测准确率分析 ===")
+        from src.backtest.metrics import calc_accuracy, print_accuracy, optimize_threshold, print_threshold_scan
+        from src.utils.plot import plot_accuracy
+        acfg = cfg["accuracy"]
+        acc = calc_accuracy(result_df, rolling_window=acfg.get("rolling_window", 20))
+        print_accuracy(acc)
+
+        thresh_result = optimize_threshold(result_df)
+        print_threshold_scan(thresh_result)
+
+        plot_accuracy(
+            acc["rolling_accuracy"], acc["monthly_accuracy"],
+            title=f"{symbol} 预测准确率",
+            save_path=f"output/reports/{symbol}_accuracy.png",
+        )
 
 
 if __name__ == "__main__":

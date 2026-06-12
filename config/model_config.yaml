@@ -2,7 +2,7 @@ lgbm:
   objective:         "binary"
   metric:            "auc"
   n_estimators:      500
-  learning_rate:     0.05
+  learning_rate:     0.01
   max_depth:         6
   num_leaves:        31
   min_child_samples: 20
@@ -10,7 +10,7 @@ lgbm:
   colsample_bytree:  0.8
   reg_alpha:         0.1
   reg_lambda:        0.1
-  early_stopping_rounds: 50
+  early_stopping_rounds: 100
   verbose:           -1
   random_state:      42
 

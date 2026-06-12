@@ -20,9 +20,9 @@ logger = get_logger(__name__)
 
 # ── 基础标签 ──────────────────────────────────────────────────────────────────
 
-def _binary(close: pd.Series, horizon: int) -> pd.Series:
+def _binary(close: pd.Series, horizon: int, threshold: float = 0.0) -> pd.Series:
     ret = close.shift(-horizon) / close - 1
-    label = (ret > 0).astype(float)
+    label = (ret > threshold).astype(float)
     label[ret.isna()] = np.nan
     return label
 
@@ -152,7 +152,7 @@ def build_labels(
     close = df[close_col]
 
     if label_type == "binary":
-        label = _binary(close, horizon)
+        label = _binary(close, horizon, threshold)
 
     elif label_type == "ternary":
         label = _ternary(close, horizon, threshold)

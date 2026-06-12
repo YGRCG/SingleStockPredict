@@ -49,6 +49,7 @@ def run_backtest(
     position = 0        # 当前持仓方向：1 多 / 0 空
 
     close_series = df["close"]
+    open_series  = df["open"] if "open" in df.columns else close_series
 
     skipped_missing = 0
     skipped_no_future = 0
@@ -58,8 +59,15 @@ def run_backtest(
             continue
 
         result = model_map[date]
-        row    = df.loc[date, feature_cols]
-        pred   = result.model.predict_proba(pd.DataFrame([row]))[0]
+        if hasattr(result.model, 'seq_len'):
+            seq_len = result.model.seq_len
+            loc = df.index.get_loc(date)
+            ctx_start = max(0, loc - seq_len + 1)
+            context = df.iloc[ctx_start:loc + 1][feature_cols]
+            pred = result.model.predict_proba(context)[-1]
+        else:
+            row = df.loc[date, feature_cols]
+            pred = result.model.predict_proba(pd.DataFrame([row]))[0]
 
         # 分类：proba >= threshold → 买入；回归：预测值 > 0 → 买入
         if result.model._is_regression:
@@ -67,13 +75,17 @@ def run_backtest(
         else:
             signal = int(pred >= cfg.threshold)
 
-        # 取次日开盘执行（简化：用次日收盘价代替）
+        actual = df.loc[date, "label"] if "label" in df.columns else np.nan
+        pred_dir = signal
+        hit = int(pred_dir == actual) if pd.notna(actual) else np.nan
+
+        # 取次日开盘执行（T+1 执行）
         future_dates = df.index[df.index > date]
         if len(future_dates) == 0:
             skipped_no_future += 1
             continue
         exec_date  = future_dates[0]
-        exec_price = close_series.loc[exec_date]
+        exec_price = open_series.loc[exec_date]
 
         # 换仓逻辑
         cost = 0.0
@@ -93,7 +105,8 @@ def run_backtest(
             holding  = 0.0
             position = 0
 
-        portfolio_value = cash + holding * exec_price
+        close_price = close_series.loc[exec_date]
+        portfolio_value = cash + holding * close_price
         records.append({
             "date":        exec_date,
             "signal":      signal,
@@ -104,6 +117,9 @@ def run_backtest(
             "holding_val": round(holding * exec_price, 2),
             "portfolio":   round(portfolio_value, 2),
             "trade_cost":  round(cost, 2),
+            "actual":      actual,
+            "pred_dir":    pred_dir,
+            "hit":         hit,
         })
 
     if skipped_missing:

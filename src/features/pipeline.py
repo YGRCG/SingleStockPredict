@@ -14,6 +14,8 @@ from src.features.multi_period import (
     build_minute_features, build_cross_period_features, merge_multi_period,
 )
 from src.features.price_pattern import build_pattern_features
+from src.features.market import build_index_features, build_stock_index_features
+from src.data.loader import load_kline
 from src.features.alpha.builder import build_alpha_features
 from src.utils.logger import get_logger
 
@@ -30,7 +32,13 @@ def _relativize_features(df: pd.DataFrame) -> pd.DataFrame:
     close = df["close"]
     to_drop = []
 
+    # 指数特征已在 build_index_features 内相对化，跳过
+    _INDEX_PREFIXES = ("idx_", "cyb_", "mkt_")
+
     for col in list(df.columns):
+        if col.startswith(_INDEX_PREFIXES):
+            continue
+
         # MA / EMA：转为偏离度 (close / ma - 1)
         if any(col.startswith(p) for p in
                ("ma_", "ema_", "w_ma_", "w_ema_", "m_ma_", "m_ema_")):
@@ -134,6 +142,18 @@ def build_feature_matrix(
         alpha_feat = build_alpha_features(data["daily"], alpha_cfg)
         daily_feat = daily_feat.join(alpha_feat, how="left")
 
+    # 市场环境特征（大盘/板块指数）
+    market_cfg = cfg.get("market", {})
+    if market_cfg.get("enabled"):
+        for idx_cfg in market_cfg["indices"]:
+            idx_daily = load_kline(idx_cfg["symbol"], "daily", data_dir)
+            idx_feat = build_index_features(daily_feat.index, idx_daily, prefix=idx_cfg["prefix"])
+            daily_feat = daily_feat.join(idx_feat, how="left")
+        first_idx = load_kline(market_cfg["indices"][0]["symbol"], "daily", data_dir)
+        mkt_cross = build_stock_index_features(data["daily"], first_idx, prefix="mkt")
+        mkt_cross = mkt_cross.reindex(daily_feat.index)
+        daily_feat = daily_feat.join(mkt_cross, how="left")
+
     # 周线 / 月线对齐（仅在对应数据已加载时计算）
     weekly_feat  = None
     monthly_feat = None
@@ -213,6 +233,7 @@ def build_feature_matrix(
         ("obv", 0.0), ("w_obv", 0.0), ("m_obv", 0.0),
         ("ret_", 0.0), ("w_ret_", 0.0), ("m_ret_", 0.0),
         ("cross_", 0.0),
+        ("idx_", 0.0), ("cyb_", 0.0), ("mkt_", 0.0),
         ("turn", 0.0), ("pctChg", 0.0),
         ("min", 0.0),
         ("alpha", 0.0),
@@ -241,8 +262,15 @@ def build_feature_matrix(
     if zscore_cfg.get("enabled", False):
         zscore_window = zscore_cfg.get("window", 120)
         feat = _rolling_zscore(feat, zscore_window)
-        feat = feat.dropna()
-        logger.info(f"滚动 z-score 标准化完成 | window={zscore_window}")
+        # 删除 z-score 后全为 NaN 的列（标准差恒为 0 的常数列）
+        all_nan_cols = feat.columns[feat.isna().all()]
+        if len(all_nan_cols) > 0:
+            logger.info(f"z-score 后全 NaN 列（已移除）: {list(all_nan_cols)}")
+            feat = feat.drop(columns=all_nan_cols)
+        # 只删预热期（前 window 行），不因个别 NaN 删数据
+        feat = feat.iloc[zscore_window:]
+        feat = feat.fillna(0.0)
+        logger.info(f"滚动 z-score 标准化完成 | window={zscore_window} | 删除预热行={zscore_window}")
 
     logger.info(f"特征矩阵: {feat.shape[0]} 行 × {feat.shape[1]} 列")
 

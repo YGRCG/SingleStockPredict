@@ -1,12 +1,12 @@
 stock:
-  symbol: "000001.SZ"   # 股票代码，A股用 xxxxxx.SZ/.SH，美股用 AAPL
+  symbol: "300226.SZ"   # 股票代码，A股用 xxxxxx.SZ/.SH，美股用 AAPL
   market: "A"           # A / US
 
 data:
   start_date: "2020-01-01"
   end_date:   "2025-12-31"
   source: "baostock"    # baostock
-  skip_download: True  # true 则跳过数据下载步骤
+  skip_download: true  # true 则跳过数据下载步骤
 
 periods:
   - daily
@@ -28,7 +28,8 @@ features:
   atr_periods:   [7, 14, 21]
   kdj_period:    9
   volume_ma:     [5, 10, 20]
-  corr_threshold: 0.95    # 高相关性过滤阈值，1.0 表示不过滤
+  corr_threshold: 1    # 高相关性过滤阈值，1.0 表示不过滤
+  top_n_features: 60   # 按重要性保留 top N 特征，0 表示不筛选
 
   zscore:
     enabled: false         # true 则启用滚动 z-score 标准化
@@ -57,25 +58,25 @@ features:
       agg_bars: 8
 
   alphas:
-    enabled: [1, 2, 6, 12]   # 填因子编号；注释掉整个 alphas 块则不计算
+    enabled: [1, 2, 7, 12]   # 填因子编号；注释掉整个 alphas 块则不计算
     rank_window: 252           # 单股场景下滚动 rank 的时序窗口
 
 label:
-  horizon:   3        # 未来 N 日（或 N 根 bar）
-  type:      "tb_win"         # binary / ternary / return / triple_barrier / tb_win
-  threshold: 0.02     # ternary / triple_barrier 模式下涨跌阈值（2%）
+  horizon:   1        # 未来 N 日（或 N 根 bar）
+  type:      "binary"         # binary / ternary / return / triple_barrier / tb_win
+  threshold: 0.005    # binary: 涨幅 > 0.5% 才算涨；ternary / triple_barrier 同理
   # triple_barrier 专属
   upper_pct: 0.03     # 止盈线
   lower_pct: 0.02     # 止损线
   min_ret_tb: 0.005   # 触及垂直边界时的最小收益判断
 
 model:
-  name: "lgbm"             # lgbm / xgb
+  name: "xgb"             # lgbm / xgb / lstm
 
 training:
-  mode:         "rolling"  # rolling（固定窗口）/ expanding（扩展窗口）
+  mode:         "expanding"  # rolling（固定窗口）/ expanding（扩展窗口）
   train_window: 500        # 固定窗口交易日数
-  val_ratio:    0.1        # 验证集比例
+  val_ratio:    0.15        # 验证集比例
   step:         1          # 滚动步长（交易日）
 
 backtest:
@@ -83,7 +84,19 @@ backtest:
   commission: 0.0003       # 单边佣金
   slippage:   0.001        # 滑点（按成交额）
   position:   1.0          # 全仓 / 可改为分批建仓
-  threshold:  0.4          # 预测概率阈值，>= threshold 做多
+  threshold:  0.5          # 预测概率阈值，>= threshold 做多
+
+market:
+  enabled: true
+  indices:
+    - symbol: "000300.SH"
+      prefix: "idx"          # 沪深300
+    - symbol: "399006.SZ"
+      prefix: "cyb"          # 创业板指
+
+accuracy:
+  enabled: true
+  rolling_window: 20       # 滚动准确率窗口（交易日）
 
 output:
   dir: "output"

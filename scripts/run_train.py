@@ -13,13 +13,14 @@ import pandas as pd
 from src.labels.builder import build_labels, drop_label_na, get_feature_cols
 from src.models.lgbm_model import LGBMModel
 from src.models.xgb_model import XGBModel
-from src.training.trainer import rolling_train
+from src.models.lstm_model import LSTMModel
+from src.training.trainer import rolling_train, rolling_train_seq
 from src.training.cross_val import time_series_cv
 from src.utils.logger import get_logger
 
 logger = get_logger("train")
 
-MODEL_MAP = {"lgbm": LGBMModel, "xgb": XGBModel}
+MODEL_MAP = {"lgbm": LGBMModel, "xgb": XGBModel, "lstm": LSTMModel}
 
 
 def main():
@@ -51,15 +52,22 @@ def main():
         logger.info(f"CV: {cv_res}")
 
     tcfg = cfg["training"]
-    rolling_train(
-        full_df, feature_cols, model_cls, model_params,
-        mode          = tcfg["mode"],
-        train_window  = tcfg["train_window"],
-        val_ratio     = tcfg["val_ratio"],
-        step          = tcfg["step"],
+    train_kwargs = dict(
+        mode           = tcfg["mode"],
+        train_window   = tcfg["train_window"],
+        val_ratio      = tcfg["val_ratio"],
+        step           = tcfg["step"],
         backtest_start = cfg["backtest"]["start_date"],
-        save_dir      = f"output/models/{args.model}",
+        save_dir       = f"output/models/{args.model}",
+        label_type     = lcfg["type"],
+        purge_gap      = cfg["label"].get("horizon", 3),
     )
+
+    if args.model == "lstm":
+        seq_len = model_cfg["lstm"].get("seq_len", 30)
+        rolling_train_seq(full_df, feature_cols, model_cls, model_params, **train_kwargs, seq_len=seq_len)
+    else:
+        rolling_train(full_df, feature_cols, model_cls, model_params, **train_kwargs)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,39 @@ def plot_nav(result_df: pd.DataFrame, title: str = "净值曲线", save_path: st
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path, dpi=150)
-    plt.show()
+    # plt.show()
+
+
+def plot_accuracy(
+    rolling_acc: pd.Series,
+    monthly_acc: pd.Series | None = None,
+    title: str = "预测准确率",
+    save_path: str | None = None,
+) -> None:
+    n_panels = 2 if monthly_acc is not None and len(monthly_acc) > 0 else 1
+    fig, axes = plt.subplots(n_panels, 1, figsize=(12, 4 * n_panels), squeeze=False)
+
+    ax0 = axes[0, 0]
+    ax0.plot(rolling_acc.index, rolling_acc.values, linewidth=1.2, label="滚动准确率")
+    ax0.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, label="随机基准 50%")
+    ax0.set_ylabel("准确率")
+    ax0.set_title(title)
+    ax0.legend()
+    ax0.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1))
+
+    if n_panels == 2:
+        ax1 = axes[1, 0]
+        ax1.bar(range(len(monthly_acc)), monthly_acc.values, color="steelblue", alpha=0.7)
+        ax1.axhline(0.5, color="gray", linestyle="--", linewidth=0.8)
+        ax1.set_xticks(range(len(monthly_acc)))
+        ax1.set_xticklabels([str(p) for p in monthly_acc.index], rotation=45, ha="right", fontsize=7)
+        ax1.set_ylabel("月度准确率")
+        ax1.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1))
+
+    plt.tight_layout()
+    if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_path, dpi=150)
 
 
 def plot_feature_importance(
